@@ -1,92 +1,63 @@
-library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
 
-classes=c("character","numeric","numeric")
 
-data <- rbind(read.csv("../PUS1_+CMC.txt",
-                       colClasses=classes,
-                       sep="\t",header=FALSE) %>%
-                 mutate(Treatment="CMC"),
-              read.csv("../PUS1_-CMC.txt",
-                       colClasses=classes,
-                       sep="\t",header=FALSE) %>%
-                 mutate(Treatment="mock"))
+#filenames = c("fname1","fname2",..."fnamen")
 
-colnames(data)<- c("Sequence","Position","Reads","Treatment")
+# Replace filenames here! Filenames is a list of input files,
+# figures will be save to outfile, which should be a .png
+filenames <- c("../../PUS1_+CMC.txt","../../PUS1_-CMC.txt",
+               "../../TRUB1_+CMC.txt","../../TRUB1_-CMC.txt")
+outfile <- "all_reads.pdf"
 
+# Load the reads from all files into a list of dataframes,
+
+data <- list()    
+classes = c("character","numeric","numeric")
+
+for (i in seq_along(filenames)) {
+    data[[i]] <- read.csv(file = filenames[i],
+                          colClasses=classes,
+                          sep="\t",header=FALSE) %>%
+        mutate(fname=filenames[i])
+}
+
+# Combine data into a single data frame, then update column names
+data <- bind_rows(data)
+colnames(data)<- c("Sequence","Position","Reads","fname")
+
+
+
+
+# Count the number of reads mapped to each Sequence
 totals <- data %>%
-    group_by(Sequence,Treatment) %>%
-    summarize(Total=sum(Reads)) #%>%
-    #filter(Treatment=="CMC") %>%
-    #arrange(desc(Total))
+    group_by(Sequence,fname) %>%
+    summarize(Total=sum(Reads)) 
 
-
-sequences = c("ENST00000361624_U391","ENST00000361381_U396")
-
-# Print a "browser view" for a given site
-ggplot(data %>% filter(Sequence=="ENST00000361624_U391")) +
-    facet_wrap(~Treatment,
-               scales='fixed',
-               ncol=1) +
-    geom_vline(xintercept=69,
-               color="#E69F00",
-               linetype="dashed") +
-    geom_bar(aes(x=Position,
-                 y=Reads,
-                 fill=Treatment),
-             stat="identity") +
-    scale_fill_manual(values=c("#000000", "#666666")) +
-    xlab("position") +
-    ylab("read 5' ends") +
-    theme_classic() +
-    theme(legend.position="none",
-          strip.background = element_blank(),
-          strip.text.x = element_blank())
-ggsave("sample_site.pdf",
-       height=3,width=4.5)
-
-
+# Use the sequence totals to normalize the reads at each position
 data <- merge(data,totals,
-              by=c("Sequence","Treatment")) %>%
+              by=c("Sequence","fname")) %>%
     filter(Total > 100) %>%
-    mutate(ReadFrac=Reads/Total)
+    mutate(ReadFrac=Reads/Total) 
 
 
+# Plot the read fractions.
 ggplot(data) +
-    facet_wrap(~Treatment,
+    facet_wrap(~fname,
                ncol=1,
                scales="fixed") +
-    geom_vline(xintercept=35,color="blue") +
-    geom_vline(xintercept=55,color="green") +
-    geom_vline(xintercept=66,color="red") +
-    geom_vline(xintercept=95,color="green") +
-    geom_vline(xintercept=115,color="blue") +
     geom_point(aes(x=Position,
-                   y=ReadFrac),
-               alpha=0.5) +
-    scale_y_log10() +
-    theme_bw()
-ggsave("../plots/all_reads_log.png")
-
-ggplot(data) +
-    facet_wrap(~Treatment,
-               ncol=1,
-               scales="fixed") +
-     geom_point(aes(x=Position,
                     y=ReadFrac),
                 size=0.5,
                 alpha=0.5) +
     ylab("fraction of reads at position") +
     xlab("position") +
-    theme_classic() +
-    theme(legend.position="none",
-          strip.background = element_blank(),
-          strip.text.x = element_blank())
+#    scale_y_log10()
+    theme_classic() 
 
- #   geom_vline(xintercept=35,color="blue") +
-  #  geom_vline(xintercept=60,color="green") +
-#    geom_vline(xintercept=66,color="red") +
- #   geom_vline(xintercept=95,color="green") +
-  #  geom_vline(xintercept=115,color="blue") +
-   
-ggsave("../plots/all_reads.png",
-       height=3,width=4.5)
+# Save the figure to outfile, scaling the figure size to
+# the number of panels/input files
+N.files <- length(filenames)
+ggsave(outfile,
+       height=N.files*1.3,width=4.5)
